@@ -37,7 +37,6 @@ yarn-error.log*
 
 # local scratch
 /.scratch
-.env*
 
 # internal agent/config docs — kept locally, not published
 AGENTS.md
