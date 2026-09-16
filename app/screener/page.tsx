@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Panel, SectionHeading, Pill } from "@/components/ui";
-import { getScreener } from "@/lib/services/assets";
+import { getScreenerCached } from "@/lib/services/assets";
 import { fmtBps, fmtCompactUsd, fmtPct, fmtTimeAgo } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default async function ScreenerPage() {
-  const screener = await getScreener();
+  const screener = await getScreenerCached();
 
   const byType = new Map<string, number>();
   for (const row of screener.rows) {
@@ -55,8 +55,9 @@ export default async function ScreenerPage() {
                 <th className="py-2 pr-3 font-normal">asset</th>
                 <th className="py-2 pr-3 font-normal">type</th>
                 <th className="py-2 pr-3 text-right font-normal">wrapper gap</th>
-                <th className="py-2 pr-3 font-normal">cheapest</th>
-                <th className="py-2 pr-3 font-normal">dearest</th>
+                <th className="py-2 pr-3 font-normal" title="Cheaper leg after dividend-accrual adjustment where applied. When legs disagree, open the asset before acting.">cheaper leg</th>
+                <th className="py-2 pr-3 font-normal" title="Dearer leg after dividend-accrual adjustment where applied.">dearer leg</th>
+                <th className="py-2 pr-3 font-normal">call</th>
                 <th className="py-2 pr-3 text-right font-normal">wrappers</th>
                 <th className="py-2 pr-3 text-right font-normal">24h volume</th>
               </tr>
@@ -94,6 +95,30 @@ export default async function ScreenerPage() {
                     <span className="font-mono text-xs text-over">{row.worstSymbol}</span>
                     <span className="ml-2 hidden text-[10px] text-dim lg:inline">
                       {row.worstIssuer}
+                    </span>
+                  </td>
+                  <td className="py-2.5 pr-3">
+                    <span className="flex items-center gap-1.5">
+                      {row.legsDisagree ? (
+                        <Pill tone="warn" title="The live legs disagree beyond the dispersion threshold — open the asset before acting on either side.">
+                          legs disagree
+                        </Pill>
+                      ) : row.verdict === "FAIR" ? (
+                        <Pill tone="ok">tracking</Pill>
+                      ) : row.verdict === "RELATIVE" ? (
+                        <Pill>relative</Pill>
+                      ) : (
+                        <Pill tone="warn">{row.verdict.toLowerCase()}</Pill>
+                      )}
+                      {row.accrualApplied ? (
+                        <Pill tone="accent" title="Ondo-style dividend accrual was stripped from total-return legs before ranking this row.">
+                          adj
+                        </Pill>
+                      ) : row.hasTotalReturn && !row.accrualResolved ? (
+                        <Pill title="A total-return wrapper is present but its accrual could not be resolved — treat this row as indicative.">
+                          raw
+                        </Pill>
+                      ) : null}
                     </span>
                   </td>
                   <td className="py-2.5 pr-3 text-right font-mono tabular text-xs text-muted">

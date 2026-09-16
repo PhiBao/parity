@@ -21,20 +21,26 @@ function issuerModel(name: string | null): { label: string; title: string } {
 }
 
 export function WrapperTable({ wrappers }: { wrappers: Wrapper[] }) {
+  const comparable = (w: Wrapper) => w.adjustedPrice ?? w.price;
+
   const rows = [...wrappers].sort((a, b) => {
     if (a.included !== b.included) return a.included ? -1 : 1;
-    if (a.price == null) return 1;
-    if (b.price == null) return -1;
-    return a.price - b.price;
+    const pa = comparable(a);
+    const pb = comparable(b);
+    if (pa == null) return 1;
+    if (pb == null) return -1;
+    return pa - pb;
   });
 
   // Exactly one row gets the "cheapest" badge — ties are broken by volume.
   const bestRow = rows
-    .filter((r) => r.included && r.price != null)
+    .filter((r) => r.included && comparable(r) != null)
     .reduce<Wrapper | null>((best, r) => {
-      if (!best || best.price == null) return r;
-      if ((r.price as number) < best.price) return r;
-      if ((r.price as number) === best.price && (r.volume24h ?? 0) > (best.volume24h ?? 0)) return r;
+      if (!best || comparable(best) == null) return r;
+      const rb = comparable(r) as number;
+      const bb = comparable(best) as number;
+      if (rb < bb) return r;
+      if (rb === bb && (r.volume24h ?? 0) > (best.volume24h ?? 0)) return r;
       return best;
     }, null);
 
@@ -45,7 +51,7 @@ export function WrapperTable({ wrappers }: { wrappers: Wrapper[] }) {
           <tr className="border-b border-line text-left font-mono text-[10px] uppercase tracking-[0.14em] text-dim">
             <th className="py-2 pr-3 font-normal">wrapper</th>
             <th className="py-2 pr-3 font-normal">issuer</th>
-            <th className="py-2 pr-3 text-right font-normal">price</th>
+            <th className="py-2 pr-3 text-right font-normal">price / adj</th>
             <th className="py-2 pr-3 text-right font-normal">vs cheapest</th>
             <th className="py-2 pr-3 text-right font-normal">vs reference</th>
             <th className="py-2 pr-3 text-right font-normal">24h volume</th>
@@ -94,6 +100,12 @@ export function WrapperTable({ wrappers }: { wrappers: Wrapper[] }) {
                 </td>
                 <td className="py-2.5 pr-3 text-right font-mono tabular text-xs text-fg">
                   {fmtPrice(w.price ?? w.rawPrice)}
+                  {w.accrualFactor ? (
+                    <div className="text-[10px] leading-snug text-dim" title="Total-return token: dividends are reinvested into the token, so its raw price includes accrued yield. The adjusted figure is what compares like-for-like.">
+                      adj {fmtPrice(w.adjustedPrice)} · +
+                      {(w.accruedYieldPct ?? 0).toFixed(2)}% accrued
+                    </div>
+                  ) : null}
                 </td>
                 <td className="py-2.5 pr-3 text-right font-mono tabular text-xs">
                   {w.spreadBpsVsBest == null ? (

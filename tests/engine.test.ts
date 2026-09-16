@@ -261,3 +261,48 @@ describe("buildVerdict — routing and confidence", () => {
     expect(result.drivers.some((d) => d.includes("excluded") && d.includes("NVDA.D"))).toBe(true);
   });
 });
+
+describe("buildVerdict — dividend accrual", () => {
+  it("strips accrued yield from total-return wrappers before ranking", () => {
+    // NVDAon carries ~0.25% of reinvested dividends; NVDAB tracks price.
+    const result = buildVerdict(
+      asset([
+        token({ symbol: "NVDAB", price: 213.36 }),
+        token({ symbol: "NVDAon", price: 213.77 }),
+      ]),
+      reference(213.8, { symbol: "NVDA" }),
+      { accrual: { NVDAon: { factor: 1.0025, since: "2025-09-04" } } },
+    );
+    const ondo = result.wrappers.find((w) => w.symbol === "NVDAon");
+    expect(ondo?.accruedYieldPct).toBeCloseTo(0.25, 2);
+    expect(ondo?.adjustedPrice).toBeCloseTo(213.77 / 1.0025, 2);
+    // after the adjustment Ondo is genuinely cheaper than the tracker
+    expect(result.best?.symbol).toBe("NVDAon");
+    expect(
+      result.drivers.some((d) => d.includes("NVDAon") && d.includes("total-return")),
+    ).toBe(true);
+  });
+
+  it("does not mistake accrued yield for a wrapper gap on high-yield names", () => {
+    // F pays ~4.6% annually; a 3.3% raw gap that is all accrual must vanish.
+    const result = buildVerdict(
+      asset([
+        token({ symbol: "F", price: 13.55 }),
+        token({ symbol: "Fon", price: 13.99 }),
+      ]),
+      reference(13.5, { symbol: "F" }),
+      { accrual: { Fon: { factor: 1.033, since: "2026-01-09" } } },
+    );
+    expect(result.spreadBps).toBeLessThan(150);
+    expect(result.best?.symbol).toBe("Fon");
+  });
+
+  it("leaves price-tracking wrappers untouched when no accrual is passed", () => {
+    const result = buildVerdict(
+      asset([token({ symbol: "A", price: 100 }), token({ symbol: "B", price: 100.5 })]),
+      reference(100, { symbol: "X" }),
+    );
+    expect(result.wrappers.every((w) => w.accrualFactor === null)).toBe(true);
+    expect(result.best?.symbol).toBe("A");
+  });
+});

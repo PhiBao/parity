@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getScreener } from "@/lib/services/assets";
+import { getScreenerCached } from "@/lib/services/assets";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const payload = await getScreener();
+    const payload = await getScreenerCached();
     return NextResponse.json(payload, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json(

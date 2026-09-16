@@ -16,8 +16,17 @@ import type {
 } from "@/lib/cmc/types";
 import { fetchReference } from "@/lib/reference";
 import type { ReferenceQuote } from "@/lib/reference";
+import {
+  fetchDividendEvents,
+  fetchTokenInception,
+  factorSince,
+  type DividendEvent,
+} from "@/lib/reference/dividends";
+import { cmcGet as cmcFetch } from "@/lib/cmc/client";
+import type { OhlcvHistorical } from "@/lib/cmc/types";
 import { TOKEN_REFERENCE_OVERRIDES, REFERENCE_MAP, referenceFor } from "@/lib/reference/mapping";
-import { buildVerdict, type VerdictResult } from "@/lib/verdict/engine";
+import type { ReferenceSpec } from "@/lib/reference/mapping";
+import { buildVerdict, THRESHOLDS, type VerdictResult } from "@/lib/verdict/engine";
 import { buildHistory, type HistoryPayload } from "@/lib/verdict/history";
 
 export interface AssetPayload {
@@ -60,8 +69,23 @@ async function resolveReferences(asset: RwaAsset): Promise<{
   tokenReferences: Record<string, ReferenceQuote | null>;
   note: string | null;
   proxy: boolean;
+  spec: ReferenceSpec | null;
 }> {
-  const spec = referenceFor(asset.symbol);
+  const hasTotalReturn = asset.tokens.some((t) => isTotalReturnIssuer(t.issuer_name));
+  let spec: ReferenceSpec | null = referenceFor(asset.symbol);
+  if (spec === null && hasTotalReturn && (asset.asset_type === "stock" || asset.asset_type === "etf")) {
+    // Identity fallback for unmapped tickers: most US symbols resolve 1:1 on
+    // the reference provider. Treated as a proxy (confidence capped) because
+    // the mapping has not been curated by hand.
+    spec = {
+      yahoo: asset.symbol,
+      kind: asset.asset_type === "stock" ? "equity" : "etf",
+      label: `${asset.symbol} (unverified mapping)`,
+      note: "Reference resolved by symbol identity, not curated — treat premium as indicative.",
+      proxy: true,
+    };
+  }
+
   const overrideTokens = asset.tokens
     .map((t) => t.symbol)
     .filter((s) => TOKEN_REFERENCE_OVERRIDES[s]);
@@ -84,7 +108,60 @@ async function resolveReferences(asset: RwaAsset): Promise<{
     tokenReferences,
     note: spec?.note ?? null,
     proxy: Boolean(spec?.proxy),
+    spec,
   };
+}
+
+/** Issuers whose tokens reinvest dividends into the token (total-return). */
+const TOTAL_RETURN_ISSUERS = ["ondo assets"];
+
+export function isTotalReturnIssuer(issuerName: string | null): boolean {
+  return TOTAL_RETURN_ISSUERS.includes((issuerName ?? "").toLowerCase());
+}
+
+export interface AccrualMap {
+  [tokenSymbol: string]: { factor: number; since: string | null };
+}
+
+async function tokenInception(cryptoId: number): Promise<string | null> {
+  const data = await cmcFetch<OhlcvHistorical>("/v2/cryptocurrency/ohlcv/historical", {
+    id: cryptoId,
+    time_start: "2020-01-01",
+    interval: "1d",
+    count: 1,
+    convert: "USD",
+  });
+  return data.quotes?.[0]?.quote?.USD?.timestamp?.slice(0, 10) ?? null;
+}
+
+/**
+ * Dividend-accrual factors for every total-return wrapper on an asset.
+ * Returns an empty map when the asset has no such wrappers or no reference.
+ */
+export async function resolveAccrual(
+  asset: RwaAsset,
+  reference: ReferenceQuote | null,
+  spec: ReferenceSpec | null = null,
+): Promise<AccrualMap> {
+  const totalReturnTokens = asset.tokens.filter(
+    (t) => isTotalReturnIssuer(t.issuer_name) && t.price != null,
+  );
+  if (totalReturnTokens.length === 0 || !reference) return {};
+
+  spec = spec ?? referenceFor(asset.symbol);
+  if (!spec) return {};
+  const events = await fetchDividendEvents(spec);
+  if (!events || events.length === 0) return {};
+
+  const out: AccrualMap = {};
+  await Promise.all(
+    totalReturnTokens.map(async (token) => {
+      const since = await fetchTokenInception(token.crypto_id, tokenInception);
+      const factor = factorSince(events, since);
+      if (factor > 1.0001) out[token.symbol] = { factor, since };
+    }),
+  );
+  return out;
 }
 
 export async function getAsset(key: string, options: { fresh?: boolean } = {}): Promise<AssetPayload | null> {
@@ -118,10 +195,12 @@ export async function getAsset(key: string, options: { fresh?: boolean } = {}): 
   if (infoResult) evidenceIds.push(infoResult.evidenceId);
   if (issuersResult) evidenceIds.push(issuersResult.evidenceId);
 
+  const accrual = await resolveAccrual(asset, refs.reference, refs.spec);
   const verdict = buildVerdict(asset, refs.reference, {
     tokenReferences: refs.tokenReferences,
     referenceNote: refs.note,
     referenceProxy: refs.proxy,
+    accrual,
   });
 
   const infoAsset = infoResult?.data?.rwa_assets?.[0] ?? null;
@@ -161,12 +240,39 @@ export async function getAsset(key: string, options: { fresh?: boolean } = {}): 
 }
 
 export async function getAssetHistory(asset: RwaAsset): Promise<HistoryPayload | null> {
-  return buildHistory(asset);
+  const spec = referenceFor(asset.symbol);
+  const accrualEvents: Record<string, DividendEvent[]> = {};
+  if (spec && asset.tokens.some((t) => isTotalReturnIssuer(t.issuer_name))) {
+    const events = await fetchDividendEvents(spec);
+    if (events) {
+      for (const t of asset.tokens) {
+        if (isTotalReturnIssuer(t.issuer_name)) accrualEvents[t.symbol] = events;
+      }
+    }
+  }
+  return buildHistory(asset, accrualEvents);
 }
 
 export async function getAssetRaw(key: string): Promise<RwaAsset | null> {
   const isSlug = /^[a-z0-9-]+$/.test(key) && key === key.toLowerCase() && !/^\d+$/.test(key);
   return quoteFor(isSlug ? { rwa_slug: key } : { symbol: key.toUpperCase() });
+}
+
+/** Run async tasks with a concurrency cap (keeps provider rate limits happy). */
+async function parallelLimit<T>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const runners = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift();
+      if (item === undefined) break;
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
 }
 
 export interface BoardRow extends VerdictResult {
@@ -213,10 +319,12 @@ export async function getBoard(): Promise<BoardPayload> {
   const rows = await Promise.all(
     assets.map(async (asset) => {
       const refs = await resolveReferences(asset);
+      const accrual = await resolveAccrual(asset, refs.reference, refs.spec);
       return buildVerdict(asset, refs.reference, {
         tokenReferences: refs.tokenReferences,
         referenceNote: refs.note,
         referenceProxy: refs.proxy,
+        accrual,
       });
     }),
   );
@@ -253,6 +361,15 @@ export interface ScreenerRow {
   worstIssuer: string | null;
   aggregatePrice: number | null;
   dispersionPct: number | null;
+  verdict: string;
+  confidence: string;
+  hasTotalReturn: boolean;
+  /** True when dividend accrual was stripped before ranking this row. */
+  accrualApplied: boolean;
+  /** True when the dividend lookup succeeded (even if it found nothing to strip). */
+  accrualResolved: boolean;
+  /** True when live legs disagree beyond the dispersion threshold. */
+  legsDisagree: boolean;
 }
 
 export interface ScreenerPayload {
@@ -290,13 +407,57 @@ export async function getScreener(): Promise<ScreenerPayload> {
   );
 
   const assets = quoteResponses.flatMap((r) => r?.rwa_assets ?? []);
-  const rows: ScreenerRow[] = [];
 
+  // Pass 1 (cheap, CMC-only): raw verdicts establish candidacy.
+  const candidates: { asset: RwaAsset; raw: VerdictResult }[] = [];
   for (const asset of assets) {
-    const verdict = buildVerdict(asset, null);
-    if (verdict.verdict === "NO_DATA") continue;
-    if (verdict.best == null) continue;
-    if (verdict.totalVolume24h < 100_000) continue;
+    const raw = buildVerdict(asset, null, {});
+    if (raw.verdict === "NO_DATA") continue;
+    if (raw.best == null) continue;
+    if (raw.totalVolume24h < 100_000) continue;
+    candidates.push({ asset, raw });
+  }
+  candidates.sort((a, b) => (b.raw.spreadBps ?? 0) - (a.raw.spreadBps ?? 0));
+
+  // Pass 2 (bounded): dividend accrual only for rows that could plausibly
+  // surface — the top raw rows carrying total-return wrappers. Events are
+  // cached for 6h, so repeat visits cost nothing.
+  const needsAccrual = candidates
+    .slice(0, 60)
+    .filter(({ asset }) => asset.tokens.some((t) => isTotalReturnIssuer(t.issuer_name)))
+    .map(({ asset }) => asset);
+  const accrualBySymbol = new Map<string, { map: AccrualMap; resolved: boolean }>();
+  await parallelLimit(needsAccrual, 3, async (asset) => {
+    let accSpec: ReferenceSpec | null = referenceFor(asset.symbol);
+    if (accSpec === null && (asset.asset_type === "stock" || asset.asset_type === "etf")) {
+      accSpec = {
+        yahoo: asset.symbol,
+        kind: asset.asset_type === "stock" ? "equity" : "etf",
+        label: asset.symbol,
+        proxy: true,
+      };
+    }
+    if (accSpec === null) return;
+    const events = await fetchDividendEvents(accSpec);
+    if (events === null) return; // provider failure: leave the row explicitly unresolved
+    const map: AccrualMap = {};
+    await Promise.all(
+      asset.tokens
+        .filter((t) => isTotalReturnIssuer(t.issuer_name) && t.price != null)
+        .map(async (token) => {
+          const since = await fetchTokenInception(token.crypto_id, tokenInception);
+          const factor = factorSince(events, since);
+          if (factor > 1.0001) map[token.symbol] = { factor, since };
+        }),
+    );
+    accrualBySymbol.set(asset.symbol, { map, resolved: true });
+  });
+
+  const rows: ScreenerRow[] = [];
+  for (const { asset, raw } of candidates) {
+    const entry = accrualBySymbol.get(asset.symbol);
+    const verdict = entry ? buildVerdict(asset, null, { accrual: entry.map }) : raw;
+    const hasTotalReturn = asset.tokens.some((t) => isTotalReturnIssuer(t.issuer_name));
     rows.push({
       symbol: asset.symbol,
       name: asset.name,
@@ -312,6 +473,13 @@ export async function getScreener(): Promise<ScreenerPayload> {
       worstIssuer: verdict.worst?.issuerName ?? null,
       aggregatePrice: verdict.price,
       dispersionPct: verdict.dispersionPct,
+      verdict: verdict.verdict,
+      confidence: verdict.confidence,
+      hasTotalReturn,
+      accrualApplied: entry != null && Object.keys(entry.map).length > 0,
+      accrualResolved: entry != null,
+      legsDisagree:
+        (verdict.dispersionPct ?? 0) > THRESHOLDS.dispersionPct && verdict.liveCount > 1,
     });
   }
 
@@ -323,6 +491,21 @@ export async function getScreener(): Promise<ScreenerPayload> {
     scanned: assets.length,
     creditsUsed: creditUsage(),
   };
+}
+
+// Short-lived payload caches keep the research pages fast on warm instances.
+// Every value inside is itself TTL-cached, so this only skips recomputation.
+const screenerCache: { expires: number; value: ScreenerPayload | null } = {
+  expires: 0,
+  value: null,
+};
+
+export async function getScreenerCached(): Promise<ScreenerPayload> {
+  if (screenerCache.value && screenerCache.expires > Date.now()) return screenerCache.value;
+  const payload = await getScreener();
+  screenerCache.value = payload;
+  screenerCache.expires = Date.now() + 180_000;
+  return payload;
 }
 
 export interface SearchResult {

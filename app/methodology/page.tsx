@@ -164,6 +164,36 @@ export default function MethodologyPage() {
       </Panel>
 
       <Panel className="px-5 py-5">
+        <h2 className="text-sm font-medium text-fg">4b · Total-return wrappers and accrued yield</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Some wrappers are <span className="text-fg">total-return instruments</span>: Ondo&apos;s{" "}
+          <span className="font-mono text-xs">*on</span> tokens reinvest dividends into the token, so
+          their price legitimately grows above the raw ticker — typically 0.3–3.5% depending on the
+          yield and the token&apos;s age. Comparing such a token to a price-tracking wrapper without
+          adjusting reports accrued yield as if it were mispricing. Before this adjustment, Ford
+          showed a 263 bps &ldquo;spread&rdquo; that was almost entirely three quarters of
+          dividends; GameStop&apos;s 200 bps gap, on a name that pays nothing, survived it — which
+          is how we know the gap is real.
+        </p>
+        <div className="mt-3 space-y-3 font-mono text-xs text-muted">
+          <div className="rounded-md border border-line bg-inset px-3 py-2">
+            factor(d) = Π over ex-dates e ≤ d of (1 + dividend(e) / close(e))
+          </div>
+          <div className="rounded-md border border-line bg-inset px-3 py-2">
+            comparable_price = token_price / factor(inception → now)
+          </div>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-muted">
+          Every verdict and every spread is computed on comparable prices. The raw price stays
+          visible in the table with the adjusted figure and the accrued percentage beneath it, and
+          the driver list states the factor and the inception date it was measured from — so the
+          adjustment is auditable, not a black box. Dividend events come from the same public
+          reference feed, cached for 6 hours. Assets whose reference cannot be resolved skip the
+          adjustment entirely rather than guessing.
+        </p>
+      </Panel>
+
+      <Panel className="px-5 py-5">
         <h2 className="text-sm font-medium text-fg">5 · Sessions and staleness</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           Tokenised equities trade 24/7; the instruments they track do not. Comparing a token at 03:00

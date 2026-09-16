@@ -51,6 +51,12 @@ export interface Wrapper {
   rawPrice: number | null;
   /** Price after unit normalisation (troy-ounce conversion when applicable). */
   price: number | null;
+  /** Price after dividend-accrual adjustment — the economically comparable number. */
+  adjustedPrice: number | null;
+  /** Cumulative reinvestment factor applied (1 = price-tracking wrapper). */
+  accrualFactor: number | null;
+  /** Accrued yield since inception, in percent. */
+  accruedYieldPct: number | null;
   unitNote: string | null;
   marketCap: number | null;
   volume24h: number | null;
@@ -131,6 +137,12 @@ export interface BuildOptions {
   referenceNote?: string | null;
   /** True when the reference is a proxy (futures basis, ADR, leveraged ETF). */
   referenceProxy?: boolean;
+  /**
+   * Dividend-accrual factors for total-return wrappers (e.g. Ondo `*on`).
+   * A factor of 1.03 means the token has reinvested 3% of dividends since its
+   * inception, so its price is divided by 1.03 before any comparison.
+   */
+  accrual?: Record<string, { factor: number; since: string | null }>;
 }
 
 function median(values: number[]): number | null {
@@ -241,7 +253,11 @@ export function buildVerdict(
       excludedReason = `Stale quote: only $${Math.round(volume24h ?? 0).toLocaleString()} traded in 24h.`;
     }
 
-    const premiumPct = price != null && refPrice ? pct(price, refPrice) : null;
+    const accrualInfo = options.accrual?.[token.symbol];
+    const factor = accrualInfo && accrualInfo.factor > 1 ? accrualInfo.factor : null;
+    const adjustedPrice = price != null && factor ? price / factor : price;
+    const effective = adjustedPrice ?? price;
+    const premiumPct = effective != null && refPrice ? pct(effective, refPrice) : null;
 
     return {
       symbol: token.symbol,
@@ -251,6 +267,9 @@ export function buildVerdict(
       issuerName: token.issuer_name,
       rawPrice,
       price,
+      adjustedPrice,
+      accrualFactor: factor,
+      accruedYieldPct: factor ? (factor - 1) * 100 : null,
       unitNote,
       marketCap: token.market_cap ?? null,
       volume24h,
@@ -270,18 +289,18 @@ export function buildVerdict(
 
   // ── step 4: outlier check inside live, non-wrapped routes ───────────
   const liveClean = wrappers.filter(
-    (w) => !w.derivative && !w.excludedReason && w.price != null && !w.wrapped,
+    (w) => !w.derivative && !w.excludedReason && w.adjustedPrice != null && !w.wrapped,
   );
   const liveWrapped = wrappers.filter(
-    (w) => w.wrapped && !w.excludedReason && w.price != null,
+    (w) => w.wrapped && !w.excludedReason && w.adjustedPrice != null,
   );
   const base = liveClean.length > 0 ? liveClean : liveWrapped;
-  const baseMedian = median(base.map((w) => w.price as number));
+  const baseMedian = median(base.map((w) => w.adjustedPrice as number));
 
   const ranked: Wrapper[] = [];
   for (const w of base) {
     if (baseMedian && baseMedian > 0) {
-      const deviationPct = Math.abs(pct(w.price as number, baseMedian));
+      const deviationPct = Math.abs(pct(w.adjustedPrice as number, baseMedian));
       if (deviationPct > THRESHOLDS.outlierBandPct && base.length > 1) {
         w.excludedReason = `Outlier: ${deviationPct.toFixed(1)}% away from the median live quote — likely a stale or exotic venue.`;
         continue;
@@ -300,7 +319,7 @@ export function buildVerdict(
     drivers.push("All live routes were outliers — showing them without outlier filtering.");
   }
 
-  const rankedPrices = ranked.map((w) => w.price as number);
+  const rankedPrices = ranked.map((w) => w.adjustedPrice as number);
   const price = median(rankedPrices);
   const aggregateAvg = asset.average_tokenized_price;
 
@@ -314,13 +333,15 @@ export function buildVerdict(
   const routeEligible = ranked.filter((w) => (w.volume24h ?? 0) >= minRouteVolume);
   const routePool = routeEligible.length > 0 ? routeEligible : ranked;
 
-  const sortedByPrice = [...routePool].sort((a, b) => (a.price as number) - (b.price as number));
+  const sortedByPrice = [...routePool].sort(
+    (a, b) => (a.adjustedPrice as number) - (b.adjustedPrice as number),
+  );
   const best = sortedByPrice[0] ?? null;
   const worst = sortedByPrice[sortedByPrice.length - 1] ?? null;
 
   const spreadBps =
-    best && worst && best.price && worst !== best
-      ? Math.round(((worst.price as number) / (best.price as number) - 1) * 10_000)
+    best && worst && best.adjustedPrice && worst !== best
+      ? Math.round(((worst.adjustedPrice as number) / (best.adjustedPrice as number) - 1) * 10_000)
       : best
         ? 0
         : null;
@@ -335,11 +356,14 @@ export function buildVerdict(
   const premiumBps = premiumPct == null ? null : Math.round(premiumPct * 100);
 
   for (const w of wrappers) {
-    if (w.price != null && best?.price) {
-      w.spreadBpsVsBest = best.price > 0 ? Math.round(((w.price as number) / best.price - 1) * 10_000) : null;
+    if (w.adjustedPrice != null && best?.adjustedPrice) {
+      w.spreadBpsVsBest =
+        best.adjustedPrice > 0
+          ? Math.round(((w.adjustedPrice as number) / best.adjustedPrice - 1) * 10_000)
+          : null;
     }
-    if (w.price != null && aggregateAvg) {
-      w.vsAggregateBps = Math.round(((w.price as number) / aggregateAvg - 1) * 10_000);
+    if (w.adjustedPrice != null && aggregateAvg) {
+      w.vsAggregateBps = Math.round(((w.adjustedPrice as number) / aggregateAvg - 1) * 10_000);
     }
     w.included = ranked.includes(w);
   }
@@ -412,6 +436,12 @@ export function buildVerdict(
   }
   for (const w of wrappers) {
     if (w.unitNote) drivers.push(`${w.symbol}: ${w.unitNote}`);
+    if (w.accrualFactor) {
+      drivers.push(
+        `${w.symbol} is a total-return token: price divided by ${w.accrualFactor.toFixed(4)} ` +
+          `(${w.accruedYieldPct?.toFixed(2)}% of dividends reinvested since inception) before comparison.`,
+      );
+    }
   }
   const excludedNonDerivative = wrappers.filter((w) => !w.derivative && w.excludedReason);
   if (excludedNonDerivative.length > 0) {

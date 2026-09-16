@@ -2,6 +2,8 @@ import { cmcGetWithEvidence } from "@/lib/cmc/client";
 import type { OhlcvHistorical, RwaAsset, RwaToken } from "@/lib/cmc/types";
 import { fetchReferenceHistory } from "@/lib/reference";
 import { referenceFor } from "@/lib/reference/mapping";
+import type { DividendEvent } from "@/lib/reference/dividends";
+import { factorSeries, factorAt } from "@/lib/reference/dividends";
 import { THRESHOLDS } from "@/lib/verdict/engine";
 
 /** A single wrapper's daily closes, as reported by the CMC OHLCV endpoint. */
@@ -88,6 +90,7 @@ function forwardFill(dates: string[], closes: Record<string, number>): Record<st
 
 async function fetchWrapperHistory(
   token: RwaToken,
+  accrualEvents: Record<string, DividendEvent[]>,
 ): Promise<{ history: WrapperHistory; evidenceId: string } | null> {
   try {
     const { data, evidenceId } = await cmcGetWithEvidence<OhlcvHistorical>(
@@ -107,12 +110,18 @@ async function fetchWrapperHistory(
       }))
       .filter((p) => typeof p.close === "number" && p.close > 0);
     if (!points || points.length === 0) return null;
+    const events = accrualEvents[token.symbol];
+    const factors = events && events.length > 0 ? factorSeries(events) : null;
+    const adjusted = factors
+      ? points.map((pt) => ({ ...pt, close: pt.close / factorAt(factors, pt.date) }))
+      : points;
+
     return {
       history: {
         symbol: token.symbol,
         cryptoId: token.crypto_id,
         issuerName: token.issuer_name,
-        points,
+        points: adjusted,
       },
       evidenceId,
     };
@@ -131,7 +140,11 @@ const HISTORY_TTL_MS = 15 * 60 * 1000;
  * tokenised claims on the same instrument, so dividends, share-class and
  * reference-source quirks cancel out. What remains is pure wrapper dislocation.
  */
-export async function buildHistory(asset: RwaAsset): Promise<HistoryPayload | null> {
+export async function buildHistory(
+  asset: RwaAsset,
+  /** Per-token dividend events, used to strip total-return accrual from closes. */
+  accrualEvents: Record<string, DividendEvent[]> = {},
+): Promise<HistoryPayload | null> {
   const cacheKey = `${asset.symbol}:${asset.tokens.map((t) => t.crypto_id).join(",")}`;
   const hit = historyCache.get(cacheKey);
   if (hit && hit.expires > Date.now()) return hit.value;
@@ -141,7 +154,7 @@ export async function buildHistory(asset: RwaAsset): Promise<HistoryPayload | nu
 
   const spec = referenceFor(asset.symbol);
   const [wrapperResults, referenceHistory] = await Promise.all([
-    Promise.all(tokens.map(fetchWrapperHistory)),
+    Promise.all(tokens.map((t) => fetchWrapperHistory(t, accrualEvents))),
     spec ? fetchReferenceHistory(spec) : Promise.resolve(null),
   ]);
 

@@ -136,7 +136,7 @@ BASE_URL=https://parity-xi.vercel.app node scripts/capture-share-card.mjs   # ex
 
 ## Known limitations (stated, not hidden)
 
-- **Total-return wrappers drift by design.** Ondo tokens reinvest dividends into the token, so they accrue a small premium versus the raw ticker. Premium-versus-reference therefore mixes wrapper price with accrued yield — which is exactly why the drift-free wrapper-against-wrapper chart leads.
+- **Total-return wrappers are accrual-adjusted, not excused.** Ondo tokens reinvest dividends into the token, so Parity reconstructs each token's reinvestment factor from the underlying's dividend events (measured from the token's own inception) and compares wrappers on `token_price / factor`. The raw price, the adjusted figure and the accrued percentage stay visible, and the verdict states the factor and inception date. Cross-model spreads that survive the adjustment (e.g. GameStop's ~200 bps on a zero-dividend name) are the genuine dislocations.
 - **Reference prices are not from CoinMarketCap.** The RWA API does not expose the underlying instrument's own quote, so Parity uses public exchange endpoints with failover; when both fail it degrades to relative mode instead of guessing.
 - **History starts when CMC's OHLCV coverage starts**, not at token launch.
 - **Venue depth stops at issuer level** while `market-pairs` is unreachable on this plan.

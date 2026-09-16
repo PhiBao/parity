@@ -35,6 +35,12 @@ const FINDINGS: Finding[] = [
       "7,937 RWA assets have live quotes but no history endpoint — the academy article describes a historical time-series for tokenized price/market cap/volume as “planned for a later phase.” Premium history is the most valuable thing a tracker can show a user, and every builder is currently forced to reconstruct it by joining token OHLCV (crypto market data) against an off-platform price for the underlying. Shipping /v5/real-world-assets/ohlcv/historical with rwa_id would immediately unlock a whole category of tools.",
   },
   {
+    title: "No token-economics metadata, so total-return accrual looks like mispricing",
+    severity: "footgun",
+    detail:
+      "Nothing in the RWA family says which wrappers are price-tracking claims and which are total-return instruments. Ondo's *on tokens reinvest dividends, so they legitimately sit 0.3–3.5% above the ticker depending on yield and age — a naive cross-issuer comparison reports that as an arbitrage opportunity (we measured 263 bps on Ford that was almost entirely three quarters of dividends). Every builder must independently discover the token's economics and reconstruct accrual from dividend events. A token_model field — price_tracking / total_return — plus the token's inception date would make every wrapper comparison on the platform correct by default.",
+  },
+  {
     title: "No session metadata, so token-close vs equity-close conflates after-hours drift with premium",
     severity: "request",
     detail:
