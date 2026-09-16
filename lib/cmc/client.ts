@@ -40,6 +40,13 @@ export interface EvidenceSummary {
   creditCount: number;
   cacheHit: boolean;
   errorMessage: string | null;
+  /**
+   * The raw response, inlined when the caller needs it rendered immediately.
+   * Serverless instances do not share memory, so a page that only stored the
+   * body in a process-local buffer could lose it before the user opens the
+   * drawer — inlining keeps the proof attached to the page that cites it.
+   */
+  responseBody?: unknown;
 }
 
 export interface CmcFetchOptions {
@@ -94,7 +101,10 @@ export function getEvidence(id: string): Evidence | undefined {
   return evidenceStore.get(id);
 }
 
-export function evidenceSummaries(ids: string[]): EvidenceSummary[] {
+export function evidenceSummaries(
+  ids: string[],
+  options: { includeBody?: boolean } = {},
+): EvidenceSummary[] {
   const out: EvidenceSummary[] = [];
   for (const id of ids) {
     const e = evidenceStore.get(id);
@@ -109,6 +119,7 @@ export function evidenceSummaries(ids: string[]): EvidenceSummary[] {
       creditCount: e.creditCount,
       cacheHit: e.cacheHit,
       errorMessage: e.errorMessage,
+      ...(options.includeBody ? { responseBody: e.responseBody } : {}),
     });
   }
   return out;

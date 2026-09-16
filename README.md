@@ -1,6 +1,6 @@
 # Parity — the fair-price check for tokenised stocks
 
-**Live app: [parity-xi.vercel.app](https://parity-xi.vercel.app)** · **Demo video: [YouTube link — add after upload]** · **X post: [link — add after posting]**
+[**X post**](https://x.com/0xKiter/status/2100240341295378693?s=20)
 
 **Track: Real World Assets** (Build with CMC: API Hackathon)
 
@@ -126,13 +126,6 @@ pnpm lint && npx tsc --noEmit   # checks
 
 Get a free key at [coinmarketcap.com/api](https://coinmarketcap.com/api) — the RWA endpoints are available from the Basic plan.
 
-Optional scripts:
-
-```bash
-BASE_URL=https://parity-xi.vercel.app node scripts/record-demo.mjs          # re-record the demo video
-BASE_URL=https://parity-xi.vercel.app node scripts/capture-screenshots.mjs  # refresh README shots
-BASE_URL=https://parity-xi.vercel.app node scripts/capture-share-card.mjs   # export a share card
-```
 
 ## MCP server — drive Parity from any agent
 
@@ -169,8 +162,7 @@ web app.
 
 - Track: **Real World Assets**
 - Deployed: **https://parity-xi.vercel.app**
-- Demo video: **[add YouTube/X link]**
-- X post: **[add link with #BuildwithCMC]**
+- **[Demo video]**(https://youtu.be/8oL0CkcFJFk)
 - API feedback: `/feedback` (seven reproducible findings)
 
 Built for the Build with CMC: API Hackathon. Market data © CoinMarketCap. Not investment advice.

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { ChevronDown, Copy, ShieldCheck } from "lucide-react";
 import type { EvidenceSummary } from "@/lib/cmc/client";
 
+type EvidenceEntry = EvidenceSummary & { responseBody?: unknown };
+
 interface EvidenceBody {
   id: string;
   label: string;
@@ -37,16 +39,39 @@ export function EvidenceDrawer({
       return;
     }
     setOpenId(id);
-    if (!bodies[id]) {
-      setBodies((prev) => ({ ...prev, [id]: "loading" }));
-      try {
-        const res = await fetch(`/api/evidence/${id}`);
-        if (!res.ok) throw new Error("expired");
-        const body = (await res.json()) as EvidenceBody;
-        setBodies((prev) => ({ ...prev, [id]: body }));
-      } catch {
-        setBodies((prev) => ({ ...prev, [id]: "error" }));
-      }
+    if (bodies[id]) return;
+
+    // Prefer the payload embedded in the page — it is the exact response the
+    // verdict was computed from and cannot expire between serverless instances.
+    const inline = (evidence as EvidenceEntry[]).find((e) => e.id === id)?.responseBody;
+    if (inline !== undefined) {
+      setBodies((prev) => ({
+        ...prev,
+        [id]: {
+          id,
+          label: "",
+          url: "",
+          curl: "",
+          requestedAt: "",
+          httpStatus: 0,
+          creditCount: 0,
+          errorCode: null,
+          errorMessage: null,
+          cacheHit: false,
+          responseBody: inline,
+        },
+      }));
+      return;
+    }
+
+    setBodies((prev) => ({ ...prev, [id]: "loading" }));
+    try {
+      const res = await fetch(`/api/evidence/${id}`);
+      if (!res.ok) throw new Error("expired");
+      const body = (await res.json()) as EvidenceBody;
+      setBodies((prev) => ({ ...prev, [id]: body }));
+    } catch {
+      setBodies((prev) => ({ ...prev, [id]: "error" }));
     }
   }
 
@@ -132,7 +157,11 @@ export function EvidenceDrawer({
                   ) : (
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-dim">
-                        <span>requested {new Date(body.requestedAt).toISOString()}</span>
+                        {body.requestedAt ? (
+                          <span>requested {new Date(body.requestedAt).toISOString()}</span>
+                        ) : (
+                          <span>captured with this page load</span>
+                        )}
                         <span>error_code {String(body.errorCode)}</span>
                       </div>
                       <pre className="max-h-72 overflow-auto rounded-md border border-line bg-inset p-3 font-mono text-[11px] leading-relaxed text-muted">

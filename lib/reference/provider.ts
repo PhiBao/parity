@@ -53,8 +53,8 @@ class Gate {
   private lastStart = 0;
 
   constructor(
-    private readonly maxConcurrent = 2,
-    private readonly minGapMs = 250,
+    private readonly maxConcurrent = 4,
+    private readonly minGapMs = 140,
   ) {}
 
   async run<T>(task: () => Promise<T>): Promise<T> {

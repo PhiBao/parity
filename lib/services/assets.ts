@@ -48,7 +48,7 @@ export interface AssetPayload {
   generatedAt: string;
 }
 
-const BOARD_SIZE = 18;
+const BOARD_SIZE = 12;
 const SCREENER_UNIVERSE = 250;
 
 async function quoteFor(
@@ -216,7 +216,7 @@ export async function getAsset(key: string, options: { fresh?: boolean } = {}): 
 
   return {
     verdict,
-    evidence: evidenceSummaries(evidenceIds),
+    evidence: evidenceSummaries(evidenceIds, { includeBody: true }),
     info: infoAsset
       ? {
           assetType: infoAsset.asset_type,
@@ -316,18 +316,19 @@ export async function getBoard(): Promise<BoardPayload> {
   ).catch(() => null);
 
   const assets = quotes?.rwa_assets ?? [];
-  const rows = await Promise.all(
-    assets.map(async (asset) => {
-      const refs = await resolveReferences(asset);
-      const accrual = await resolveAccrual(asset, refs.reference, refs.spec);
-      return buildVerdict(asset, refs.reference, {
+  const rows: VerdictResult[] = [];
+  await parallelLimit(assets, 5, async (asset) => {
+    const refs = await resolveReferences(asset);
+    const accrual = await resolveAccrual(asset, refs.reference, refs.spec);
+    rows.push(
+      buildVerdict(asset, refs.reference, {
         tokenReferences: refs.tokenReferences,
         referenceNote: refs.note,
         referenceProxy: refs.proxy,
         accrual,
-      });
-    }),
-  );
+      }),
+    );
+  });
 
   const score = (v: VerdictResult) => {
     if (v.verdict === "NO_DATA" || v.verdict === "ILLIQUID") return -1;
