@@ -1,0 +1,11 @@
+# Never upload secrets or internal documents.
+.env
+.env.*
+!.env.example
+AGENTS.md
+FOUNDER.md
+opencode.json
+opencode.alt.json
+.git
+.scratch
+coverage

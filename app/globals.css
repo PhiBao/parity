@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+/*
+ * Parity design tokens.
+ *
+ * Dark, terminal-adjacent, one brand accent (acid lime) used sparingly.
+ * Verdict colours are semantic and never reused for anything else, so a
+ * glance at a colour tells you the call before you read the number.
+ */
+:root {
+  --bg: #07080a;
+  --bg-elevated: #0d0f13;
+  --bg-inset: #111318;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --fg: #f4f5f7;
+  --fg-muted: #9aa1ab;
+  --fg-dim: #6b7280;
+  --accent: #d8ff3e;
+  --accent-dim: rgba(216, 255, 62, 0.12);
+
+  --verdict-fair: #e5e7eb;
+  --verdict-over: #ff6f61;
+  --verdict-under: #4ade80;
+  --verdict-dispersion: #fbbf24;
+  --verdict-illiquid: #94a3b8;
+  --verdict-relative: #c4b5fd;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elevated: var(--bg-elevated);
+  --color-inset: var(--bg-inset);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--fg-muted);
+  --color-dim: var(--fg-dim);
+  --color-accent: var(--accent);
+  --color-fair: var(--verdict-fair);
+  --color-over: var(--verdict-over);
+  --color-under: var(--verdict-under);
+  --color-dispersion: var(--verdict-dispersion);
+  --color-illiquid: var(--verdict-illiquid);
+  --color-relative: var(--verdict-relative);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 50% -300px, rgba(216, 255, 62, 0.05), transparent 60%),
+    var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: #07080a;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Thin, quiet scrollbars keep tables feeling like instruments, not documents. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+*::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+@keyframes parity-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.live-dot {
+  animation: parity-pulse 2s ease-in-out infinite;
+}
+
+@keyframes parity-shimmer {
+  from {
+    background-position: -400px 0;
+  }
+  to {
+    background-position: 400px 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    rgba(255, 255, 255, 0.07) 50%,
+    rgba(255, 255, 255, 0.02) 100%
+  );
+  background-size: 800px 100%;
+  animation: parity-shimmer 1.6s linear infinite;
+}
