@@ -1,4 +1,4 @@
-import { Panel, SectionHeading, Pill } from "@/components/ui";
+import { Panel, SectionHeading, Pill, InlineLink } from "@/components/ui";
 import { creditUsage, listEvidence } from "@/lib/cmc/client";
 
 export const dynamic = "force-dynamic";
@@ -87,6 +87,16 @@ export default function EndpointsPage() {
           </Panel>
         ))}
       </div>
+
+      <Panel className="px-5 py-5">
+        <h2 className="text-sm font-medium text-fg">Parity&apos;s own API surface</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Everything above is also available to AI agents as five MCP tools at{" "}
+          <code className="font-mono text-xs text-accent">POST /api/mcp</code> — same engine, same
+          caches, same accrual adjustment. Connect any MCP client in 30 seconds, or drive the
+          tools from your browser, at <InlineLink href="/mcp">/mcp</InlineLink>.
+        </p>
+      </Panel>
 
       <Panel className="px-5 py-5">
         <h2 className="text-sm font-medium text-fg">Visible evidence of real calls</h2>

@@ -32,6 +32,7 @@ export const metadata: Metadata = {
 const NAV = [
   { href: "/", label: "Board" },
   { href: "/screener", label: "Screener" },
+  { href: "/mcp", label: "MCP" },
   { href: "/methodology", label: "Methodology" },
   { href: "/endpoints", label: "Endpoints" },
   { href: "/feedback", label: "API feedback" },
@@ -92,6 +93,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             <div className="flex flex-wrap items-center gap-3">
               <Link href="/methodology" className="transition hover:text-fg">
                 Methodology
+              </Link>
+              <Link href="/mcp" className="transition hover:text-fg">
+                MCP
               </Link>
               <Link href="/endpoints" className="transition hover:text-fg">
                 Endpoints used

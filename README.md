@@ -134,6 +134,30 @@ BASE_URL=https://parity-xi.vercel.app node scripts/capture-screenshots.mjs  # re
 BASE_URL=https://parity-xi.vercel.app node scripts/capture-share-card.mjs   # export a share card
 ```
 
+## MCP server — drive Parity from any agent
+
+Parity exposes the same engine as five MCP tools over Streamable HTTP, with no
+auth and no sessions:
+
+| Tool | What it answers |
+| --- | --- |
+| `parity_fair_value` | Blended premium, cheapest wrapper, reference freshness, confidence |
+| `parity_spread` | Every wrapper ranked on accrual-adjusted prices, with exclusion reasons |
+| `parity_screener` | Top cross-wrapper dislocations across the universe |
+| `parity_history` | Weekend vs weekday dislocation, worst episodes, recent spread series |
+| `parity_search` | Find assets by ticker, name or slug |
+
+```bash
+claude mcp add --transport http parity https://parity-xi.vercel.app/api/mcp
+```
+
+Then ask “is tokenised NVDA rich right now?” or “which SPY wrapper is cheapest
+after dividends?”. Try every tool live, in the browser, at
+[`/mcp`](https://parity-xi.vercel.app/mcp) — the tester performs the real MCP
+handshake and shows the JSON-RPC wire traffic. The CoinMarketCap key never
+leaves the server; agents see the same cached, accrual-adjusted numbers as the
+web app.
+
 ## Known limitations (stated, not hidden)
 
 - **Total-return wrappers are accrual-adjusted, not excused.** Ondo tokens reinvest dividends into the token, so Parity reconstructs each token's reinvestment factor from the underlying's dividend events (measured from the token's own inception) and compares wrappers on `token_price / factor`. The raw price, the adjusted figure and the accrued percentage stay visible, and the verdict states the factor and inception date. Cross-model spreads that survive the adjustment (e.g. GameStop's ~200 bps on a zero-dividend name) are the genuine dislocations.
